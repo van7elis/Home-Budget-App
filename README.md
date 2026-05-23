@@ -1,4 +1,4 @@
-# 🏠 Home Budget Tracker
+# 🏠 Home Budget App
 
 A mobile-first, single-file web app for tracking shared household bills and personal expenses between two users. No installation, no server, no login — just open the HTML file in any browser.
 
