@@ -1,2 +1,2 @@
-# Budget_app
+# Home Budget
 HTML app for tracing montly expenses
