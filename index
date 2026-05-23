@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#f0eeeb"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="Budget"/>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='hg' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%235b8dee'/%3E%3Cstop offset='100%25' stop-color='%233b6fd4'/%3E%3C/linearGradient%3E%3CradialGradient id='cg' cx='50%25' cy='40%25' r='60%25'%3E%3Cstop offset='0%25' stop-color='%23fbbf24'/%3E%3Cstop offset='100%25' stop-color='%23d97706'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath d='M50 10 L88 44 H74 V80 H26 V44 H12 Z' fill='url(%23hg)'/%3E%3Ccircle cx='50' cy='76' r='18' fill='url(%23cg)' stroke='white' stroke-width='3'/%3E%3Ctext x='50' y='82' text-anchor='middle' font-size='18' font-weight='900' fill='white' font-family='Arial'%3E%C2%A3%3C/text%3E%3C/svg%3E"/>
+<title>Home Budget</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js">
+/* ── Delete confirmation ── */
+let _delResolve = null;
+function confirmDelete(name) {
+  const modal = document.getElementById('del-modal');
+  const nameEl = document.getElementById('del-modal-name');
+  nameEl.textContent = name ? '"' + name + '"' : 'This entry will be removed.';
+  modal.style.display = 'flex';
+  return new Promise(resolve => {
+    _delResolve = resolve;
+  });
+}
+document.getElementById('del-cancel').addEventListener('click', () => {
+  document.getElementById('del-modal').style.display = 'none';
+  if(_delResolve) _delResolve(false);
+});
+document.getElementById('del-confirm').addEventListener('click', () => {
+  document.getElementById('del-modal').style.display = 'none';
+  if(_delResolve) _delResolve(true);
+});
+// Close on backdrop click
+document.getElementById('del-modal').addEventListener('click', function(e) {
+  if(e.target === this) { this.style.display='none'; if(_delResolve) _delResolve(false); }
+});
+
+
+/* ── PWA Service Worker ── */
+if ('serviceWorker' in navigator) {
+  const swCode = "\nconst CACHE = 'home-budget-v24';\nself.addEventListener('install', e => {\n  self.skipWaiting();\n});\nself.addEventListener('activate', e => {\n  e.waitUntil(clients.claim());\n});\nself.addEventListener('fetch', e => {\n  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));\n});\n";
+  const blob = new Blob([swCode], {type: 'application/javascript'});
+  const swUrl = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swUrl).catch(() => {});
+}
+
+/* ── Install prompt (Android Chrome) ── */
+let _deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _deferredPrompt = e;
+  const bar = document.getElementById('install-bar');
+  if (bar) bar.style.display = 'flex';
+});
+window.addEventListener('appinstalled', () => {
+  const bar = document.getElementById('install-bar');
+  if (bar) bar.style.display = 'none';
+});
+function installApp() {
+  if (_deferredPrompt) {
+    _deferredPrompt.prompt();
+    _deferredPrompt.userChoice.then(() => { _deferredPrompt = null; });
+  }
+}
+
+</script>
+<style>
+:root {
+  --bg:    #f0eeeb;
+  --card:  #ffffff;
+  --card2: #f8f6f3;
+  --b:     #e4e0d8;
+  --b2:    #ccc8be;
+  --text:  #18181b;
+  --sub:   #6b7280;
+  --muted: #9ca3af;
+  --v:        #03045e;
+  --v-lt:     rgba(3,4,94,.08);
+  --v-md:     rgba(3,4,94,.18);
+  --v-hh:     #03045e;          /* household card – deep navy */
+  --v-hh-bg:  rgba(3,4,94,.10);
+  --v-pe:     #0077b6;          /* personal card  – mid blue  */
+  --v-pe-bg:  rgba(0,119,182,.10);
+  --m:        #ff0054;
+  --m-lt:     rgba(255,0,84,.08);
+  --m-md:     rgba(255,0,84,.18);
+  --m-hh:     #c9002f;          /* household card – deep crimson */
+  --m-hh-bg:  rgba(201,0,47,.10);
+  --m-pe:     #ff6b9d;          /* personal card  – soft pink   */
+  --m-pe-bg:  rgba(255,107,157,.12);
+  --bills: #d97706;
+  --green: #059669;
+  --red:   #dc2626;
+  --sh:    0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.07);
+  --sh2:   0 2px 8px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.08);
+  --r:     14px;
+  --nav-h: 66px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+canvas { max-width: 100% !important; display: block; }
+html { scroll-behavior: smooth; overflow-x: hidden; max-width: 100vw; }
+body {
+  font-family: 'Manrope', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100dvh; overflow-x: hidden; max-width: 100vw;
+}
+
+/* ── HEADER ── */
+header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(240,238,235,.95);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border-bottom: 1px solid var(--b);
+  box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 2px 12px rgba(0,0,0,.05);
+  padding-top: var(--safe-t);
+}
+.hdr {
+  max-width: 1100px; margin: 0 auto;
+  padding: 0 18px; height: 56px;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+}
+.logo {
+  display: flex; align-items: center; gap: 9px; flex-shrink: 0;
+}
+.logo svg { width: 32px; height: 32px; }
+.logo-title {
+  font-family: 'Manrope', sans-serif; font-size: 16px; font-weight: 700;
+  color: var(--text); letter-spacing: -.015em;
+}
+.month-nav {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+}
+.mnav-btn {
+  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--b);
+  background: var(--card); color: var(--sub); font-size: 16px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .15s; box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.mnav-btn:hover { border-color: var(--b2); color: var(--text); }
+.mnav-label {
+  font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 700;
+  color: var(--text); min-width: 150px; text-align: center;
+}
+.hdr-chips { display: none; }
+.user-switch { justify-self: end; }
+.hdr-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 20px; border: 1px solid var(--b);
+  background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+.chip-icon { font-size: 14px; }
+.chip-val {
+  font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700;
+}
+@media (max-width: 560px) {
+  .logo-title { display: none; }
+}
+
+/* ── MOBILE STRIP ── */
+.mob-strip {
+  background: var(--card2); border-bottom: 1px solid var(--b);
+  display: none;
+}
+.mob-strip-grid {
+  display: grid; grid-template-columns: 1fr 1px 1fr 1px 1fr;
+  max-width: 420px; margin: 0 auto; align-items: stretch;
+}
+.mob-div { background: var(--b); }
+.mob-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; }
+.mob-lbl { font-size: 8px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.mob-val { font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 700; }
+@media (max-width: 560px) { .mob-strip { display: block; } }
+
+/* ── LAYOUT ── */
+.main {
+  max-width: 1100px; margin: 0 auto;
+  padding: 12px 10px calc(var(--nav-h) + var(--safe-b) + 10px);
+  /* minmax(0, 1fr) is critical: without the 0 minimum, grid cells use
+     'auto' which lets content push cells wider than the viewport.
+     This is why Bills/Personal panels were wider than Summary. */
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+@media (min-width: 900px) {
+  .main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 280px; padding-bottom: 24px; gap: 18px; }
+}
+
+/* Panels */
+.panel { display: none; flex-direction: column; gap: 12px; min-width: 0; overflow: hidden; }
+.panel.active { display: flex; }
+@media (min-width: 900px) { .panel { display: flex !important; } }
+
+/* ── SECTION CARDS ── */
+.sec {
+  background: var(--card); border-radius: var(--r); box-shadow: var(--sh);
+  overflow: hidden; border: 1px solid var(--b);
+}
+.sec-hdr {
+  padding: 14px 16px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--b); background: var(--card2);
+}
+.sec-title {
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700;
+  color: var(--text); letter-spacing: -.01em;
+}
+.sec-pip { width: 7px; height: 7px; border-radius: 50%; }
+.sec-total {
+  font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 800;
+  color: var(--text);
+}
+
+/* ── BILL ROWS ── */
+.bill-list { padding: 8px 0; }
+.bill-row {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--b);
+  transition: background .12s;
+}
+.bill-row:last-child { border-bottom: none; }
+.bill-row:hover { background: rgba(0,0,0,.025); }
+
+.bill-top {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.bill-ico {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  background: linear-gradient(135deg, #fef3c7, #fde68a); font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(217,119,6,.2);
+}
+.bill-name {
+  flex: 1; min-width: 0; width: 1px; max-width: 100%; background: none; border: none; outline: none;
+  font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 600; color: var(--text);
+}
+.bill-name:focus { color: #000; }
+.bill-amt-wrap { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.amt-sym { font-size: 12px; color: var(--muted); font-family: 'Manrope', sans-serif; }
+.bill-amt {
+  width: 72px; background: var(--card2); border: 1.5px solid var(--b);
+  border-radius: 8px; padding: 5px 6px; text-align: right;
+  color: var(--text); font-family: 'Manrope', sans-serif;
+  font-size: 13px; font-weight: 700; outline: none; transition: border-color .15s;
+  -moz-appearance: textfield;
+}
+.bill-amt::-webkit-outer-spin-button, .bill-amt::-webkit-inner-spin-button { -webkit-appearance: none; }
+.bill-amt:focus { border-color: var(--bills); }
+.bill-del {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
+  background: none; border: 1px solid var(--b); color: var(--muted);
+  cursor: pointer; font-size: 15px; display: flex; align-items: center;
+  justify-content: center; transition: all .15s; line-height: 1;
+}
+.bill-del:hover { background: #fef2f2; border-color: #fca5a5; color: var(--red); }
+
+/* Split row */
+.bill-split {
+  display: flex; align-items: center; gap: 6px;
+}
+.split-side {
+  display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+}
+.split-emoji { font-size: 14px; line-height: 1; }
+.pct-inp {
+  width: 40px; border: none; border-bottom: 2px solid;
+  background: transparent; text-align: center;
+  font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700;
+  outline: none; padding: 1px 0; -moz-appearance: textfield;
+  transition: border-color .15s;
+}
+.pct-inp::-webkit-outer-spin-button, .pct-inp::-webkit-inner-spin-button { -webkit-appearance: none; }
+.pct-inp.v { color: var(--v); border-color: var(--v-md); }
+.pct-inp.v:focus { border-color: var(--v); }
+.pct-inp.m { color: var(--m); border-color: var(--m-md); }
+.pct-inp.m:focus { border-color: var(--m); }
+.pct-sign { font-size: 11px; color: var(--muted); font-weight: 600; }
+
+.split-bar-wrap { flex: 1; min-width: 0; position: relative; height: 8px; border-radius: 4px; background: var(--b); overflow: hidden; }
+.split-bar-v {
+  position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px;
+  background: linear-gradient(90deg, #03045e, #0d3b8c);
+  transition: width .06s;
+}
+.split-bar-m {
+  position: absolute; right: 0; top: 0; bottom: 0; border-radius: 4px;
+  background: linear-gradient(270deg, #ff0054, #c9002f);
+  transition: width .06s;
+}
+.split-range-ov {
+  position: absolute; top: -12px; left: 0; right: 0; bottom: -12px;
+  width: 100%; opacity: 0;
+  cursor: ew-resize; -webkit-appearance: none; appearance: none;
+}
+
+.bill-shares { display: flex; justify-content: space-between; margin-top: 8px; }
+.bill-share {
+  font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700;
+  padding: 3px 10px; border-radius: 6px;
+}
+.bill-share.v { color: var(--v); background: var(--v-lt); border: 1px solid rgba(3,4,94,.12); }
+.bill-share.m { color: var(--m); background: var(--m-lt); border: 1px solid rgba(255,0,84,.12); }
+
+/* ── ADD BUTTON ── */
+.add-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; padding: 13px 18px; background: none; border: none;
+  border-top: 1px solid var(--b); color: var(--muted);
+  font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all .15s; letter-spacing: .01em;
+}
+.add-btn:hover { color: var(--text); background: var(--card2); }
+.add-btn svg { width: 15px; height: 15px; }
+
+/* ── EXPENSE ROWS ── */
+.exp-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--b);
+  transition: background .12s;
+}
+.exp-row:last-child { border-bottom: none; }
+.exp-row:hover { background: rgba(0,0,0,.025); }
+.exp-ico {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  font-size: 14px; display: flex; align-items: center; justify-content: center;
+}
+.exp-ico.v-ico { background: linear-gradient(135deg, rgba(3,4,94,.10), rgba(13,59,140,.10)); }
+.exp-ico.m-ico { background: linear-gradient(135deg, rgba(255,0,84,.10), rgba(201,0,47,.10)); }
+.exp-name {
+  flex: 1; min-width: 0; width: 1px; max-width: 100%; background: none; border: none; outline: none;
+  font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 500; color: var(--text);
+}
+.exp-amt {
+  width: 68px; flex-shrink: 0; background: var(--card2); border: 1.5px solid var(--b);
+  border-radius: 8px; padding: 6px 8px; text-align: right;
+  color: var(--text); font-family: 'Manrope', sans-serif;
+  font-size: 13px; font-weight: 700; outline: none; transition: border-color .15s;
+  -moz-appearance: textfield;
+}
+.exp-amt::-webkit-outer-spin-button, .exp-amt::-webkit-inner-spin-button { -webkit-appearance: none; }
+.exp-amt.v:focus { border-color: var(--v); }
+.exp-amt.m:focus { border-color: var(--m); }
+.exp-del {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+  background: none; border: 1px solid var(--b); color: var(--muted);
+  cursor: pointer; font-size: 14px; display: flex; align-items: center;
+  justify-content: center; transition: all .15s; line-height: 1;
+}
+.exp-del:hover { background: #fef2f2; border-color: #fca5a5; color: var(--red); }
+
+/* ── SUMMARY ── */
+
+
+
+
+/* ── Two summary hero cards ── */
+.sum-two-heroes {
+  display: flex; gap: 12px; padding: 18px 14px 16px;
+}
+.sum-hero-card {
+  flex: 1; border-radius: 18px; padding: 18px 16px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.10);
+  min-width: 0; position: relative; overflow: hidden;
+}
+.sum-hero-card::before {
+  content: ''; position: absolute; top: -20px; right: -20px;
+  width: 80px; height: 80px; border-radius: 50%;
+  background: rgba(255,255,255,.12);
+}
+/* Active-user colour switching handled via JS-added classes */
+.sum-hero-card.v-household { background: linear-gradient(135deg, #03045e 0%, #0d3b8c 100%); border: none; }
+.sum-hero-card.v-personal  { background: linear-gradient(135deg, #0077b6 0%, #00b4d8 100%); border: none; }
+.sum-hero-card.m-household { background: linear-gradient(135deg, #c9002f 0%, #e63946 100%); border: none; }
+.sum-hero-card.m-personal  { background: linear-gradient(135deg, #ff0054 0%, #ff6b9d 100%); border: none; }
+
+.sum-hero-card-lbl {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .1em; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; color: rgba(255,255,255,.75);
+}
+
+.sum-hero-card-val {
+  font-family: 'Manrope', sans-serif; font-size: 28px; font-weight: 800;
+  letter-spacing: -.03em; line-height: 1.1; white-space: nowrap;
+  color: #ffffff;
+}
+
+.sum-hero-card-sub {
+  font-size: 11px; font-weight: 600;
+  background: rgba(255,255,255,.18); border-radius: 20px;
+  padding: 2px 8px; display: inline-block; width: fit-content;
+  color: rgba(255,255,255,.9);
+}
+
+.sum-hero { padding: 20px 18px 0; }
+.sum-hero-lbl { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+.sum-hero-val {
+  font-family: 'Manrope', sans-serif; font-size: 40px; font-weight: 700;
+  color: var(--text); letter-spacing: -.03em; line-height: 1;
+}
+
+.sum-split-bar { display: flex; height: 8px; margin: 16px 18px; border-radius: 4px; overflow: hidden; }
+.ssb-v { background: var(--v); transition: width .4s; }
+.ssb-m { background: var(--m); flex: 1; }
+
+.sum-person-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 14px 14px; }
+.sum-person {
+  border-radius: 12px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sum-person.v { background: var(--v-lt); border: 1px solid var(--v-md); }
+.sum-person.m { background: var(--m-lt); border: 1px solid var(--m-md); }
+.sp-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.sp-label.v { color: var(--v); }
+.sp-label.m { color: var(--m); }
+.sp-val { font-family: 'Manrope', sans-serif; font-size: 22px; font-weight: 700; color: var(--text); }
+.sp-pct { font-size: 11px; color: var(--sub); }
+
+.sum-divider { height: 1px; background: var(--b); margin: 0 18px; }
+
+.sum-table { width: 100%; border-collapse: collapse; }
+.sum-table td { padding: 10px 18px; font-size: 13px; border-bottom: 1px solid var(--b); }
+.sum-table td:last-child { text-align: right; font-family: 'Manrope', sans-serif; font-weight: 700; }
+.sum-table td:first-child { color: var(--sub); font-weight: 500; }
+.sum-table .grand td { font-weight: 800; font-size: 14px; color: var(--text); border-bottom: none; background: var(--card2); }
+.sum-table .grand td:last-child { font-family: 'Manrope', sans-serif; font-size: 16px; }
+
+.sum-chart-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 16px 18px 10px; }
+.sum-donut-wrap { position: relative; height: 180px; padding: 0 14px; overflow: hidden; }
+.sum-hist-wrap { position: relative; height: 100px; padding: 0 14px 14px; overflow: hidden; }
+
+.export-btn {
+  display: flex; align-items: center; gap: 7px; justify-content: center;
+  margin: 0 14px 18px; padding: 11px; border-radius: 12px;
+  background: var(--card2); border: 1.5px solid var(--b);
+  font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700; color: var(--sub);
+  cursor: pointer; transition: all .18s;
+}
+.export-btn:hover { border-color: var(--green); color: var(--green); background: rgba(5,150,105,.05); }
+.export-btn svg { width: 13px; height: 13px; }
+
+/* ── BOTTOM NAV ── */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+  width: 100%;
+  height: calc(var(--nav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: rgba(248,246,243,.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid var(--b);
+  /* grid forces exactly equal column widths — flexbox can't guarantee this for <button> on Samsung */
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  box-shadow: 0 -1px 0 rgba(255,255,255,.6), 0 -4px 24px rgba(0,0,0,.10);
+  overflow: hidden;
+}
+@media (min-width: 900px) { .bottom-nav { display: none; } }
+.nav-btn {
+  /* reset all button defaults that can cause size differences */
+  appearance: none; -webkit-appearance: none;
+  margin: 0; padding: 0; border: none; background: none;
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 3px;
+  cursor: pointer;
+  color: var(--muted); transition: color .15s;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.nav-btn.active[data-tab="bills"]    { color: var(--bills); }
+.nav-btn.active[data-tab="personal"] { color: var(--v); }
+.nav-btn.active[data-tab="summary"]  { color: var(--green); }
+.nav-btn.active { color: var(--text); }
+.nav-ico { font-size: 22px; line-height: 1; }
+.nav-lbl {
+  font-family: 'Manrope', sans-serif; font-size: 10px; font-weight: 600;
+  letter-spacing: .02em; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+/* Active dot */
+.nav-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: currentColor; opacity: 0; transition: opacity .15s;
+}
+.nav-btn.active .nav-dot { opacity: 1; }
+
+/* ── TOAST ── */
+.toast {
+  position: fixed; bottom: calc(var(--nav-h) + var(--safe-b) + 10px); left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  background: var(--card2); color: var(--green); border: 1px solid var(--b);
+  border-radius: 20px; padding: 8px 16px;
+  font-size: 12px; font-weight: 600;
+  opacity: 0; transition: all .25s; z-index: 500;
+  white-space: nowrap; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 2px; }
+
+/* ═══════════════════════════════════════════════════════
+   MOBILE — Samsung Galaxy S26 (360 px viewport)
+   Strategy: zoom the entire page to 88% so a design
+   built for ~410 px fits neatly in the 360 px screen.
+   Every dimension, font and touch target scales together,
+   so nothing overflows and nothing looks crowded.
+═══════════════════════════════════════════════════════ */
+@media (max-width: 430px) {
+
+  /* Zoom the root — makes 360 px behave like 409 px */
+  html { zoom: 1; }
+
+  /* Lock the page width so nothing escapes the viewport */
+  html, body { max-width: 100vw; overflow-x: hidden; }
+
+  /* Remove extra padding — zoom already gives breathing room */
+  .main  { padding: 10px 8px calc(var(--nav-h) + var(--safe-b) + 8px); gap: 10px; }
+  .hdr   { padding: 0 8px; gap: 4px; grid-template-columns: auto 1fr auto; }
+  .logo  { display: none; }
+  .user-switch { gap: 2px; padding: 2px; }
+  .user-btn { padding: 3px 8px; font-size: 11px; }
+  .mnav-btn  { width: 24px; height: 24px; font-size: 14px; }
+
+  /* Month label: let it shrink rather than force a min-width */
+  .mnav-label { min-width: 80px; text-align: center; font-size: 13px; white-space: nowrap; }
+
+  /* Bill rows */
+  .bill-row  { padding: 11px 12px; }
+  .sec-hdr   { padding: 12px 14px 10px; }
+  .bill-ico  { width: 26px; height: 26px; font-size: 13px; }
+  .bill-amt  { width: 62px; font-size: 13px; padding: 4px 6px; }
+  .split-emoji { display: none; }
+
+  /* Pct inputs */
+  .pct-inp  { width: 34px; font-size: 12px; }
+  .pct-sign { font-size: 10px; }
+  .bill-share { font-size: 11px; padding: 2px 6px; }
+
+  /* Expense rows */
+  .exp-row  { padding: 10px 12px; }
+  .exp-amt  { width: 62px; font-size: 13px; }
+
+  /* Summary */
+  .sum-hero-val { font-size: 32px; letter-spacing: -.025em; }
+  .sum-split-bar { margin: 12px 14px; }
+  .sum-person-row { padding: 0 14px 14px; gap: 8px; }
+  .sp-val { font-size: 18px; }
+
+  /* Nav */
+  .nav-lbl  { font-size: 9px; }
+  .mob-val  { font-size: 13px; }
+}
+
+/* ── USER SWITCHER ── */
+.user-switch {
+  display: flex; align-items: center; gap: 3px;
+  background: var(--card2); border: 1px solid var(--b);
+  border-radius: 22px; padding: 3px; flex-shrink: 0;
+}
+.user-btn {
+  padding: 5px 13px; border-radius: 18px; border: none; background: none;
+  font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700;
+  color: var(--sub); cursor: pointer; transition: all .2s; white-space: nowrap;
+}
+.user-btn.active-v {
+  background: linear-gradient(135deg, #03045e, #0d3b8c);
+  color: #fff; box-shadow: 0 2px 8px rgba(3,4,94,.35);
+}
+.user-btn.active-m {
+  background: linear-gradient(135deg, #c9002f, #ff0054);
+  color: #fff; box-shadow: 0 2px 8px rgba(255,0,84,.35);
+}
+
+/* ── INCOME & REMAINING ── */
+.income-wrap {
+  padding: 14px 18px; border-top: 1px solid var(--b);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--card2);
+}
+.income-lbl { font-size: 12px; font-weight: 700; color: var(--sub); letter-spacing: .02em; }
+.income-inp-wrap { display: flex; align-items: center; gap: 4px; }
+.income-sym { font-size: 12px; color: var(--muted); font-family: 'Manrope', sans-serif; }
+.income-inp {
+  width: 88px; background: var(--card); border: 1.5px solid var(--b);
+  border-radius: 8px; padding: 6px 8px; text-align: right;
+  color: var(--text); font-family: 'Manrope', sans-serif;
+  font-size: 14px; font-weight: 700; outline: none; transition: border-color .15s;
+  -moz-appearance: textfield;
+}
+.income-inp::-webkit-outer-spin-button, .income-inp::-webkit-inner-spin-button { -webkit-appearance: none; }
+.income-inp:focus { border-color: var(--green); }
+.remaining-wrap {
+  margin: 0 14px 16px; border-radius: 14px; padding: 16px 18px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.remaining-wrap.positive { background: linear-gradient(135deg, rgba(5,150,105,.10), rgba(5,150,105,.05)); border: 1.5px solid rgba(5,150,105,.25); }
+.remaining-wrap.negative { background: linear-gradient(135deg, rgba(220,38,38,.10), rgba(220,38,38,.05)); border: 1.5px solid rgba(220,38,38,.25); }
+.remaining-lbl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--sub); }
+.remaining-val { font-family: 'Manrope', sans-serif; font-size: 24px; font-weight: 800; }
+.remaining-wrap.positive .remaining-val { color: var(--green); }
+.remaining-wrap.negative .remaining-val { color: var(--red); }
+.remaining-sub { font-size: 10px; color: var(--sub); margin-top: 3px; }
+
+/* ── EDITABLE NAMES ── */
+.name-edit {
+  background: none; border: none; outline: none;
+  font-family: inherit; font-size: inherit; font-weight: inherit;
+  color: inherit; cursor: text; min-width: 40px;
+  border-bottom: 1.5px dashed transparent;
+  transition: border-color .15s; padding: 0 2px;
+}
+.name-edit:hover, .name-edit:focus { border-bottom-color: var(--b2); }
+
+.sum-section-lbl {
+  font-size: 10px; font-weight: 800; letter-spacing: .10em;
+  text-transform: uppercase; color: var(--muted);
+  padding: 12px 18px 4px; margin-top: 6px;
+}
+.active-total-lbl { color: var(--green); }
+.sub-total td { font-weight: 700; color: var(--text); border-top: 1px solid var(--b); background: rgba(0,0,0,.015); }
+</style>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjogIkhvbWUgQnVkZ2V0IiwgInNob3J0X25hbWUiOiAiQnVkZ2V0IiwgImRlc2NyaXB0aW9uIjogIlRyYWNrIGhvdXNlaG9sZCBiaWxscyBhbmQgcGVyc29uYWwgZXhwZW5zZXMiLCAic3RhcnRfdXJsIjogIi4iLCAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwgImJhY2tncm91bmRfY29sb3IiOiAiI2YwZWVlYiIsICJ0aGVtZV9jb2xvciI6ICIjMDMwNDVlIiwgIm9yaWVudGF0aW9uIjogInBvcnRyYWl0IiwgImljb25zIjogW3sic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbCwlM0NzdmcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJyB2aWV3Qm94PScwIDAgMTAwIDEwMCclM0UlM0NyZWN0IHdpZHRoPScxMDAnIGhlaWdodD0nMTAwJyByeD0nMjInIGZpbGw9JyUyMzAzMDQ1ZScvJTNFJTNDcGF0aCBkPSdNNTAgMTUgTDg1IDQ1IEg3MiBWODAgSDI4IFY0NSBIMTUgWicgZmlsbD0nJTIzNWI4ZGVlJy8lM0UlM0NjaXJjbGUgY3g9JzUwJyBjeT0nNzMnIHI9JzE2JyBmaWxsPSclMjNmYmJmMjQnIHN0cm9rZT0nd2hpdGUnIHN0cm9rZS13aWR0aD0nMicvJTNFJTNDdGV4dCB4PSc1MCcgeT0nNzknIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtc2l6ZT0nMTYnIGZvbnQtd2VpZ2h0PSc5MDAnIGZpbGw9J3doaXRlJyBmb250LWZhbWlseT0nQXJpYWwnJTNFJUMyJUEzJTNDL3RleHQlM0UlM0Mvc3ZnJTNFIiwgInNpemVzIjogIjE5MngxOTIiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55IG1hc2thYmxlIn0sIHsic3JjIjogImRhdGE6aW1hZ2Uvc3ZnK3htbCwlM0NzdmcgeG1sbnM9J2h0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnJyB2aWV3Qm94PScwIDAgMTAwIDEwMCclM0UlM0NyZWN0IHdpZHRoPScxMDAnIGhlaWdodD0nMTAwJyByeD0nMjInIGZpbGw9JyUyMzAzMDQ1ZScvJTNFJTNDcGF0aCBkPSdNNTAgMTUgTDg1IDQ1IEg3MiBWODAgSDI4IFY0NSBIMTUgWicgZmlsbD0nJTIzNWI4ZGVlJy8lM0UlM0NjaXJjbGUgY3g9JzUwJyBjeT0nNzMnIHI9JzE2JyBmaWxsPSclMjNmYmJmMjQnIHN0cm9rZT0nd2hpdGUnIHN0cm9rZS13aWR0aD0nMicvJTNFJTNDdGV4dCB4PSc1MCcgeT0nNzknIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtc2l6ZT0nMTYnIGZvbnQtd2VpZ2h0PSc5MDAnIGZpbGw9J3doaXRlJyBmb250LWZhbWlseT0nQXJpYWwnJTNFJUMyJUEzJTNDL3RleHQlM0UlM0Mvc3ZnJTNFIiwgInNpemVzIjogIjUxMng1MTIiLCAidHlwZSI6ICJpbWFnZS9zdmcreG1sIiwgInB1cnBvc2UiOiAiYW55IG1hc2thYmxlIn1dfQ==">
+  <!-- iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Home Budget">
+  <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxMDAgMTAwJz48cmVjdCB3aWR0aD0nMTAwJyBoZWlnaHQ9JzEwMCcgcng9JzIyJyBmaWxsPSclMjMwMzA0NWUnLz48cGF0aCBkPSdNNTAgMTUgTDg1IDQ1IEg3MiBWODAgSDI4IFY0NSBIMTUgWicgZmlsbD0nJTIzNWI4ZGVlJy8+PGNpcmNsZSBjeD0nNTAnIGN5PSc3Mycgcj0nMTYnIGZpbGw9JyUyM2ZiYmYyNCcgc3Ryb2tlPSd3aGl0ZScgc3Ryb2tlLXdpZHRoPScyJy8+PHRleHQgeD0nNTAnIHk9Jzc5JyB0ZXh0LWFuY2hvcj0nbWlkZGxlJyBmb250LXNpemU9JzE2JyBmb250LXdlaWdodD0nOTAwJyBmaWxsPSd3aGl0ZScgZm9udC1mYW1pbHk9J0FyaWFsJz7CozwvdGV4dD48L3N2Zz4=">
+  <!-- Android theme -->
+  <meta name="mobile-web-app-capable" content="yes">
+</head>
+<body>
+<!-- Install banner -->
+<div id="install-bar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:linear-gradient(135deg,#03045e,#0d3b8c);color:#fff;
+  align-items:center;justify-content:space-between;padding:10px 16px;
+  font-family:'Manrope',sans-serif;font-size:13px;font-weight:700;
+  box-shadow:0 2px 12px rgba(0,0,0,.25);">
+  <span>🏠 Add Home Budget to your home screen</span>
+  <button onclick="installApp()" style="background:#fbbf24;color:#1a1a2e;border:none;
+    border-radius:20px;padding:7px 16px;font-family:'Manrope',sans-serif;
+    font-size:12px;font-weight:800;cursor:pointer;">Install</button>
+</div>
+
+
+<!-- HEADER -->
+<header>
+  <div class="hdr">
+    <div class="logo">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#5b8dee"/>
+            <stop offset="100%" stop-color="#3b6fd4"/>
+          </linearGradient>
+          <radialGradient id="cg" cx="50%" cy="40%" r="60%">
+            <stop offset="0%" stop-color="#fbbf24"/>
+            <stop offset="100%" stop-color="#d97706"/>
+          </radialGradient>
+        </defs>
+        <!-- House body -->
+        <path d="M50 10 L88 44 H74 V80 H26 V44 H12 Z" fill="url(#hg)" rx="3"/>
+        <!-- Chimney -->
+        <rect x="62" y="20" width="8" height="18" rx="2" fill="#3b6fd4"/>
+        <!-- Door -->
+        <rect x="40" y="58" width="20" height="22" rx="3" fill="#ffffff" opacity="0.25"/>
+        <!-- Gold coin overlapping bottom centre -->
+        <circle cx="50" cy="76" r="18" fill="url(#cg)" stroke="#ffffff" stroke-width="3"/>
+        <!-- £ symbol on coin -->
+        <text x="50" y="82" text-anchor="middle" font-size="18" font-weight="900" fill="#ffffff" font-family="Arial">£</text>
+      </svg>
+      <span class="logo-title">Home Budget</span>
+    </div>
+
+    <div class="month-nav">
+      <button class="mnav-btn" id="prev-mo">‹</button>
+      <div class="mnav-label" id="month-label">—</div>
+      <button class="mnav-btn" id="next-mo">›</button>
+    </div>
+
+    <div class="user-switch">
+      <button class="user-btn active-v" id="user-v" onclick="setUser('v')">🧑 User 1</button>
+      <button class="user-btn" id="user-m" onclick="setUser('m')">🧒 User 2</button>
+    </div>
+    <div class="hdr-chips">
+      <div class="hdr-chip">
+        <span class="chip-icon">🧑</span>
+        <span class="chip-val" id="hdr-v" style="color:var(--v)">—</span>
+      </div>
+      <div class="hdr-chip">
+        <span class="chip-icon">🧒</span>
+        <span class="chip-val" id="hdr-m" style="color:var(--m)">—</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- MOBILE STRIP -->
+<div class="mob-strip">
+  <div class="mob-strip-grid">
+    <div class="mob-cell">
+      <span class="mob-lbl" id="mob-v-name">🧑 User 1</span>
+      <span class="mob-val" id="mob-v" style="color:var(--v)">—</span>
+    </div>
+    <div class="mob-div"></div>
+    <div class="mob-cell">
+      <span class="mob-lbl">Household</span>
+      <span class="mob-val" id="mob-tot">—</span>
+    </div>
+    <div class="mob-div"></div>
+    <div class="mob-cell">
+      <span class="mob-lbl" id="mob-m-name">🧑 User 2</span>
+      <span class="mob-val" id="mob-m" style="color:var(--m)">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- BILLS PANEL -->
+  <div class="panel" id="panel-bills">
+    <div class="sec">
+      <div class="sec-hdr">
+        <div class="sec-title">
+          <span class="sec-pip" style="background:var(--bills)"></span>
+          Shared Bills
+        </div>
+        <span class="sec-total" id="bills-total">£0</span>
+      </div>
+      <div class="bill-list" id="bill-list"></div>
+      <button class="add-btn" id="add-bill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add bill
+      </button>
+    </div>
+  </div>
+
+  <!-- PERSONAL PANEL -->
+  <div class="panel" id="panel-personal">
+    <!-- User 1 expenses -->
+    <div class="sec" id="sec-mine">
+      <div class="sec-hdr">
+        <div class="sec-title">
+          <span class="sec-pip" style="background:var(--v)"></span>
+          🧑 <input class="name-edit" id="sec-v-name" value="User 1" title="Click to rename"/>
+        </div>
+        <span class="sec-total" id="mine-total" style="color:var(--v)">£0</span>
+      </div>
+      <div id="mine-list"></div>
+      <button class="add-btn" id="add-mine">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add expense
+      </button>
+    </div>
+    <!-- User 2 expenses -->
+    <div class="sec" id="sec-hers" style="display:none">
+      <div class="sec-hdr">
+        <div class="sec-title">
+          <span class="sec-pip" style="background:var(--m)"></span>
+          🧑 <input class="name-edit" id="sec-m-name" value="User 2" title="Click to rename"/>
+        </div>
+        <span class="sec-total" id="hers-total" style="color:var(--m)">£0</span>
+      </div>
+      <div id="hers-list"></div>
+      <button class="add-btn" id="add-hers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add expense
+      </button>
+    </div>
+  </div>
+
+  <!-- SUMMARY PANEL -->
+  <div class="panel active" id="panel-summary">
+    <div class="sec">
+      <!-- ── Two hero cards ── -->
+      <div class="sum-two-heroes">
+        <div class="sum-hero-card v-household" id="card-household">
+          <div class="sum-hero-card-lbl" id="card-hh-lbl">🏠 MY SHARE</div>
+          <div class="sum-hero-card-val" id="s-household">£0</div>
+          <div class="sum-hero-card-sub" id="s-household-pct">0% of total</div>
+        </div>
+        <div class="sum-hero-card v-personal" id="card-personal">
+          <div class="sum-hero-card-lbl" id="card-pe-lbl">👤 PERSONAL</div>
+          <div class="sum-hero-card-val" id="s-personal">£0</div>
+          <div class="sum-hero-card-sub" id="s-personal-pct">0% of total</div>
+        </div>
+      </div>
+      <div class="sum-divider"></div>
+      <!-- ── Household Bills breakdown ── -->
+      <div class="sum-section-lbl" id="sum-hh-lbl">🏠 User 1 Household Share</div>
+      <table class="sum-table">
+        <tr id="st-row-bv"><td id="st-lbl-bv">Bills</td><td id="st-bv">—</td></tr>
+        <tr id="st-row-bm" style="display:none"><td id="st-lbl-bm">My share</td><td id="st-bm">—</td></tr>
+        <tr class="sub-total"><td>Bills Total</td><td id="st-gt">—</td></tr>
+      </table>
+      <!-- ── Personal expenses breakdown ── -->
+      <div class="sum-section-lbl" id="sum-personal-lbl">👤 Personal Expenses</div>
+      <table class="sum-table">
+        <tr id="st-row-ev"><td id="st-lbl-ev">Other Expenses</td><td id="st-ev">—</td></tr>
+      </table>
+      <!-- ── Grand total ── -->
+      <div class="sum-section-lbl active-total-lbl">💰 Your Total</div>
+      <table class="sum-table">
+        <tr class="grand"><td>Total</td><td id="st-user-total">—</td></tr>
+      </table>
+
+      <div class="income-wrap">
+        <span class="income-lbl" id="income-lbl">💰 Income</span>
+        <div class="income-inp-wrap">
+          <span class="income-sym">£</span>
+          <input type="number" class="income-inp" id="income-inp" value="0" min="0" step="1"/>
+        </div>
+      </div>
+      <div class="remaining-wrap positive" id="remaining-wrap">
+        <div>
+          <div class="remaining-lbl">Remaining Budget</div>
+          <div class="remaining-sub" id="remaining-sub">Income − My total costs</div>
+        </div>
+        <div class="remaining-val" id="remaining-val">£0</div>
+      </div>
+      <div class="sum-chart-title">Breakdown</div>
+      <div class="sum-donut-wrap"><canvas id="donut-chart"></canvas></div>
+
+      <div class="sum-chart-title">Last 6 Months</div>
+      <div class="sum-hist-wrap"><canvas id="hist-chart"></canvas></div>
+
+      <button class="export-btn" id="export-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export as CSV
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<!-- BOTTOM NAV -->
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-tab="summary">
+    <span class="nav-ico">📊</span>
+    <span class="nav-lbl">Summary</span>
+    <span class="nav-dot"></span>
+  </button>
+  <button class="nav-btn" data-tab="bills">
+    <span class="nav-ico">🧾</span>
+    <span class="nav-lbl">Bills</span>
+    <span class="nav-dot"></span>
+  </button>
+  <button class="nav-btn" data-tab="personal">
+    <span class="nav-ico">🧑</span>
+    <span class="nav-lbl">Personal</span>
+    <span class="nav-dot"></span>
+  </button>
+</nav>
+
+<div class="toast" id="toast">Saved</div>
+
+<script>
+/* ── Helpers ── */
+const $ = id => document.getElementById(id);
+const GBP = v => '£' + Math.round(Math.abs(v)).toLocaleString('en-GB');
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const clamp = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
+const num = v => parseFloat(v) || 0;
+
+/* ── Month helpers ── */
+const toYM = d => d.toISOString().slice(0,7);
+const ymDate = ym => new Date(ym+'-01T12:00:00');
+const ymLabel = ym => {
+  const d = ymDate(ym);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getMonth()] + ' ' + d.getFullYear();
+};
+const prevYM = ym => { const d=ymDate(ym); d.setMonth(d.getMonth()-1); return toYM(d); };
+const nextYM = ym => { const d=ymDate(ym); d.setMonth(d.getMonth()+1); return toYM(d); };
+
+/* ── Auto icons ── */
+const billIcon = n => {
+  n = n.toLowerCase();
+  if (/rent|mortgage|flat|house/.test(n)) return '🏠';
+  if (/council|tax/.test(n)) return '🏛️';
+  if (/elec|power|energy/.test(n)) return '⚡';
+  if (/gas|heat|boiler/.test(n)) return '🔥';
+  if (/hot water/.test(n)) return '🚿';
+  if (/water/.test(n)) return '💧';
+  if (/internet|broadband|wifi|bt/.test(n)) return '📡';
+  if (/tv|tele|netflix|amazon|disney|licence/.test(n)) return '📺';
+  if (/phone|mobile/.test(n)) return '📱';
+  if (/insur/.test(n)) return '🛡️';
+  if (/car|petrol|fuel/.test(n)) return '🚗';
+  if (/grocer|supermarket|food|shop/.test(n)) return '🛒';
+  if (/subscri|spotify|music/.test(n)) return '🎵';
+  return '💳';
+};
+const expIcon = n => {
+  n = n.toLowerCase();
+  if (/gym|fitness|sport/.test(n)) return '💪';
+  if (/yoga|pilates|medit/.test(n)) return '🧘';
+  if (/coffee|cafe/.test(n)) return '☕';
+  if (/lunch|food|eat/.test(n)) return '🍽️';
+  if (/transport|bus|train|tube|travel|commut/.test(n)) return '🚆';
+  if (/book/.test(n)) return '📚';
+  if (/hair|beauty|salon/.test(n)) return '💇';
+  if (/subscri|spotify|music/.test(n)) return '🎵';
+  if (/mobile|phone/.test(n)) return '📱';
+  return '💸';
+};
+
+/* ── Defaults ── */
+const DFLT_BILLS = [
+  {id:1,name:'Rent',        amount:0, myPct:50},
+  {id:2,name:'Council Tax', amount:0,  myPct:50},
+  {id:3,name:'Electricity', amount:0,    myPct:50},
+  {id:4,name:'Hot Water',   amount:0,    myPct:50},
+  {id:5,name:'Water',       amount:0,    myPct:50},
+  {id:6,name:'Internet',    amount:0, myPct:50},
+  {id:8,name:'Groceries',   amount:0,    myPct:50},
+  {id:9,name:'Subscriptions',amount:0,   myPct:50},
+];
+const DFLT_MINE = [{id:1,name:'Gym',  amount:0},{id:2,name:'Mobile', amount:0},{id:3,name:'Travel', amount:0},{id:4,name:'Monthly General', amount:0}];
+const DFLT_HERS = [{id:1,name:'Gym',  amount:0},{id:2,name:'Mobile', amount:0},{id:3,name:'Travel', amount:0},{id:4,name:'Monthly General', amount:0}];
+
+/* ── State ── */
+let currentYM = toYM(new Date());
+let bills=[], mine=[], hers=[];
+let nextBillId=10, nextMineId=10, nextHersId=10;
+let activeUser = 'v';
+const NAMES = { v: 'User 1', m: 'User 2' };
+
+function saveName(who, val) {
+  val = val.trim() || (who==='v'?'User 1':'User 2');
+  NAMES[who] = val;
+  localStorage.setItem('hb3-names', JSON.stringify(NAMES));
+  applyNames();
+}
+function loadNames() {
+  const saved = localStorage.getItem('hb3-names');
+  if(saved) { try { const n=JSON.parse(saved); NAMES.v=n.v||'User 1'; NAMES.m=n.m||'User 2'; } catch{} }
+  applyNames();
+}
+function applyNames() {
+  // Header chips
+  const hv = document.getElementById('hdr-v-name'); if(hv) hv.value = NAMES.v;
+  const hm = document.getElementById('hdr-m-name'); if(hm) hm.value = NAMES.m;
+  // User switch buttons
+  const bv = document.getElementById('user-v'); if(bv) bv.textContent = '🧑 '+NAMES.v;
+  const bm = document.getElementById('user-m'); if(bm) bm.textContent = '🧒 '+NAMES.m;
+  // Section headers
+  const sv = document.getElementById('sec-v-name'); if(sv) sv.value = NAMES.v;
+  const sm = document.getElementById('sec-m-name'); if(sm) sm.value = NAMES.m;
+  // Mobile strip
+  const mv = document.getElementById('mob-v-name'); if(mv) mv.textContent = '🧑 '+NAMES.v;
+  const mm = document.getElementById('mob-m-name'); if(mm) mm.textContent = '🧒 '+NAMES.m;
+  // Summary panel
+  const spv = document.getElementById('sp-label-v'); if(spv) spv.textContent = '🧑 '+NAMES.v;
+  const spm = document.getElementById('sp-label-m'); if(spm) spm.textContent = '🧒 '+NAMES.m;
+  // Income label
+  const lbl = document.getElementById('income-lbl');
+  if(lbl) lbl.textContent = activeUser==='v' ? '💰 Income' : '💰 Income';
+  // History chart dataset labels
+  if(typeof histChart !== 'undefined') {
+    histChart.data.datasets[0].label = NAMES.v;
+    histChart.data.datasets[1].label = NAMES.m;
+    histChart.update();
+  }
+  // Summary table labels
+  const stbv = document.getElementById('st-lbl-bv'); if(stbv) stbv.textContent = 'Bills';
+  const stbm = document.getElementById('st-lbl-bm'); if(stbm) stbm.textContent = 'Bills';
+  const stev = document.getElementById('st-lbl-ev'); if(stev) stev.textContent = 'Other Expenses';
+  const stem = document.getElementById('st-lbl-em'); if(stem) stem.textContent = 'Other Expenses';
+  // Nav bar labels
+  const nv = document.getElementById('nav-v-name'); if(nv) nv.textContent = NAMES.v;
+  const nm = document.getElementById('nav-m-name'); if(nm) nm.textContent = NAMES.m;
+  // donut chart labels
+  if(typeof donutChart !== 'undefined') {
+    donutChart.data.labels=[NAMES.v+"'s Bills", NAMES.v+" Personal", NAMES.m+"'s Bills", NAMES.m+" Personal"];
+    donutChart.update();
+  }
+}
+
+/* ── Storage ── */
+const KEY = ym => 'hb3-' + ym;
+const APP_VERSION = 'v25';
+if(localStorage.getItem('hb3-version') !== APP_VERSION) {
+  // Clear ALL hb3 data including names so fresh defaults apply
+  Object.keys(localStorage).filter(k => k.startsWith('hb3-')).forEach(k => localStorage.removeItem(k));
+  localStorage.setItem('hb3-version', APP_VERSION);
+}
+function save() {
+  const _incEl=document.getElementById('income-inp'); const _incVal=parseFloat(_incEl&&_incEl.value)||0; const _incStore=JSON.parse(localStorage.getItem(KEY(currentYM)+'_inc')||'{}'); _incStore[activeUser]=_incVal; localStorage.setItem(KEY(currentYM)+'_inc',JSON.stringify(_incStore)); localStorage.setItem(KEY(currentYM), JSON.stringify({bills,mine,hers,nextBillId,nextMineId,nextHersId}));
+  flashToast();
+}
+let debT=null;
+const debounceSave = () => { clearTimeout(debT); debT=setTimeout(save,500); };
+function load(ym) {
+  const raw=localStorage.getItem(KEY(ym));
+  if (raw) {
+    try {
+      const d=JSON.parse(raw);
+      bills=(d.bills||[]).map(b=>({...b}));
+      mine=(d.mine||[]).map(e=>({...e}));
+      hers=(d.hers||[]).map(e=>({...e}));
+      nextBillId=d.nextBillId||100; nextMineId=d.nextMineId||100; nextHersId=d.nextHersId||100;
+      return;
+    } catch {}
+  }
+  bills=DFLT_BILLS.map(b=>({...b}));
+  mine=DFLT_MINE.map(e=>({...e}));
+  hers=DFLT_HERS.map(e=>({...e}));
+  nextBillId=100; nextMineId=10; nextHersId=10;
+}
+
+/* ── Toast ── */
+let tT=null;
+function flashToast() {
+  const t=$('toast'); t.classList.add('show');
+  clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1500);
+}
+
+/* ── Render bills ── */
+function renderBills() {
+  $('bill-list').innerHTML = bills.map(b => `
+    <div class="bill-row" data-id="${b.id}">
+      <div class="bill-top">
+        <div class="bill-ico" id="bico-${b.id}">${billIcon(b.name)}</div>
+        <input class="bill-name" type="text" value="${esc(b.name)}" data-id="${b.id}" data-f="name" placeholder="Bill name"/>
+        <div class="bill-amt-wrap">
+          <span class="amt-sym">£</span>
+          <input class="bill-amt" type="number" value="${b.amount}" data-id="${b.id}" data-f="amount" min="0" step="1"/>
+        </div>
+        ${bills.length>1?`<button class="bill-del" data-del="${b.id}">×</button>`:''}
+      </div>
+
+      <div class="bill-split">
+        <div class="split-side">
+          <span class="split-emoji">🧑</span>
+          <input type="number" class="pct-inp v" id="vpct-${b.id}" value="${b.myPct}" min="0" max="100" step="1" data-id="${b.id}" data-side="v"/>
+          <span class="pct-sign">%</span>
+        </div>
+        <div class="split-bar-wrap">
+          <div class="split-bar-v" id="sbv-${b.id}" style="width:${b.myPct}%"></div>
+          <div class="split-bar-m" id="sbm-${b.id}" style="width:${100-b.myPct}%"></div>
+          <input type="range" class="split-range-ov" min="0" max="100" value="${b.myPct}" data-id="${b.id}"/>
+        </div>
+        <div class="split-side">
+          <input type="number" class="pct-inp m" id="mpct-${b.id}" value="${100-b.myPct}" min="0" max="100" step="1" data-id="${b.id}" data-side="m"/>
+          <span class="pct-sign">%</span>
+          <span class="split-emoji">🧒</span>
+        </div>
+      </div>
+
+      <div class="bill-shares">
+        <span class="bill-share v" id="bsv-${b.id}">${GBP(b.amount*b.myPct/100)}</span>
+        <span class="bill-share m" id="bsm-${b.id}">${GBP(b.amount*(1-b.myPct/100))}</span>
+      </div>
+    </div>
+  `).join('');
+
+  const list = $('bill-list');
+
+  // Name icon live update
+  list.querySelectorAll('.bill-name').forEach(inp => {
+    inp.addEventListener('input', () => {
+      $('bico-'+inp.dataset.id).textContent = billIcon(inp.value);
+    });
+  });
+
+  // Amount/name inputs
+  list.querySelectorAll('.bill-amt, .bill-name').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const b=bills.find(x=>x.id===+inp.dataset.id); if(!b) return;
+      b[inp.dataset.f] = inp.dataset.f==='name' ? inp.value : num(inp.value);
+      updateBillShares(b.id);
+      recalc(); debounceSave();
+    });
+  });
+
+  // Pct inputs (type directly)
+  list.querySelectorAll('.pct-inp').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const id=+inp.dataset.id, b=bills.find(x=>x.id===id); if(!b) return;
+      let v = clamp(Math.round(num(inp.value)), 0, 100);
+      if (inp.dataset.side==='v') { b.myPct=v; } else { b.myPct=100-v; }
+      syncSplit(id, b.myPct);
+      recalc(); debounceSave();
+    });
+    inp.addEventListener('blur', () => {
+      const id=+inp.dataset.id, b=bills.find(x=>x.id===id); if(!b) return;
+      inp.value = inp.dataset.side==='v' ? b.myPct : 100-b.myPct;
+    });
+  });
+
+  // Range slider
+  list.querySelectorAll('.split-range-ov').forEach(sl => {
+    sl.addEventListener('input', () => {
+      const id=+sl.dataset.id, b=bills.find(x=>x.id===id); if(!b) return;
+      b.myPct=+sl.value;
+      syncSplit(id, b.myPct);
+      recalc(); debounceSave();
+    });
+  });
+
+  // Delete
+  list.querySelectorAll('.bill-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const b = bills.find(x=>x.id===+btn.dataset.del);
+      const ok = await confirmDelete(b ? b.name : '');
+      if(!ok) return;
+      bills=bills.filter(b=>b.id!==+btn.dataset.del);
+      renderBills(); recalc(); save();
+    });
+  });
+}
+
+function syncSplit(id, myPct) {
+  $('sbv-'+id).style.width = myPct+'%';
+  $('sbm-'+id).style.width = (100-myPct)+'%';
+  $('vpct-'+id).value = myPct;
+  $('mpct-'+id).value = 100-myPct;
+  updateBillShares(id);
+}
+function updateBillShares(id) {
+  const b=bills.find(x=>x.id===id); if(!b) return;
+  $('bsv-'+id).textContent = GBP(b.amount*b.myPct/100);
+  $('bsm-'+id).textContent = GBP(b.amount*(1-b.myPct/100));
+}
+
+/* ── Render expenses ── */
+function renderExp(arr, listId, which) {
+  const isMine = which==='mine';
+  const vc = isMine ? 'v-ico' : 'm-ico';
+  const ac = isMine ? 'v' : 'm';
+  $(listId).innerHTML = arr.map(e => `
+    <div class="exp-row" data-id="${e.id}">
+      <div class="exp-ico ${vc}" id="eico-${which}-${e.id}">${expIcon(e.name)}</div>
+      <input class="exp-name" type="text" value="${esc(e.name)}"
+             data-id="${e.id}" data-src="${which}" data-f="name" placeholder="Expense name"/>
+      <input class="exp-amt ${ac}" type="number" value="${e.amount}"
+             data-id="${e.id}" data-src="${which}" data-f="amount" min="0" step="1"/>
+      <button class="exp-del" data-del="${e.id}" data-src="${which}">×</button>
+    </div>
+  `).join('');
+
+  const src = isMine ? mine : hers;
+  const el = $(listId);
+
+  el.querySelectorAll('.exp-name').forEach(inp => {
+    inp.addEventListener('input', () => {
+      $(`eico-${which}-${inp.dataset.id}`).textContent = expIcon(inp.value);
+    });
+  });
+  el.querySelectorAll('input[data-id]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const e=src.find(x=>x.id===+inp.dataset.id); if(!e) return;
+      e[inp.dataset.f] = inp.dataset.f==='name' ? inp.value : num(inp.value);
+      recalc(); debounceSave();
+    });
+  });
+  el.querySelectorAll('.exp-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const src2 = isMine ? mine : hers;
+      const entry = src2.find(e=>e.id===+btn.dataset.del);
+      const ok = await confirmDelete(entry ? entry.name : '');
+      if(!ok) return;
+      if(isMine) mine=mine.filter(e=>e.id!==+btn.dataset.del);
+      else       hers=hers.filter(e=>e.id!==+btn.dataset.del);
+      renderExp(isMine?mine:hers, listId, which); recalc(); save();
+    });
+  });
+}
+
+function renderAll() {
+  renderBills();
+  renderExp(mine,'mine-list','mine');
+  renderExp(hers,'hers-list','hers');
+  recalc();
+}
+
+/* ── Charts ── */
+let donutChart=null, histChart=null;
+function initCharts() {
+  const TT = {
+    backgroundColor:'#18181b', borderColor:'#e8e5df', borderWidth:1,
+    bodyFont:{family:'Manrope',size:11}, bodyColor:'#fff',
+    titleColor:'#a1a1aa', padding:10,
+  };
+  donutChart = new Chart($('donut-chart').getContext('2d'), {
+    type:'doughnut',
+    data:{labels:[],datasets:[{data:[],backgroundColor:[],borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'70%',
+      plugins:{legend:{position:'right',labels:{color:'#6b7280',font:{family:'Manrope',size:10},boxWidth:8,padding:8}},
+        tooltip:{...TT,callbacks:{label:i=>'  '+GBP(i.raw)}}}}
+  });
+  histChart = new Chart($('hist-chart').getContext('2d'), {
+    type:'bar',
+    data:{labels:[],datasets:[
+      {label:NAMES.v,data:[],backgroundColor:'rgba(3,4,94,.65)',borderRadius:4,borderSkipped:false},
+      {label:NAMES.m,data:[],backgroundColor:'rgba(255,0,84,.65)',borderRadius:4,borderSkipped:false},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#6b7280',font:{family:'Manrope',size:9},boxWidth:8,padding:8}},
+        tooltip:{...TT,callbacks:{label:i=>'  '+GBP(i.raw)}}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#9ca3af',font:{family:'Manrope',size:9}}},
+        y:{grid:{color:'rgba(0,0,0,.06)'},ticks:{color:'#9ca3af',font:{family:'Manrope',size:9},callback:v=>GBP(v)}}
+      }}
+  });
+}
+function updateHistory() {
+  const months=[]; let ym=currentYM;
+  for(let i=0;i<6;i++){months.unshift(ym); ym=prevYM(ym);}
+  const labels=[],vd=[],md=[];
+  months.forEach(m=>{
+    const _mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; labels.push(_mo[ymDate(m).getMonth()]);
+    const raw=localStorage.getItem(KEY(m));
+    if(raw){const d=JSON.parse(raw);
+      vd.push(Math.round(d.bills.reduce((s,b)=>s+b.amount*b.myPct/100,0)+d.mine.reduce((s,e)=>s+e.amount,0)));
+      md.push(Math.round(d.bills.reduce((s,b)=>s+b.amount*(1-b.myPct/100),0)+d.hers.reduce((s,e)=>s+e.amount,0)));
+    }else{vd.push(0);md.push(0);}
+  });
+  histChart.data.labels=labels;
+  histChart.data.datasets[0].data=vd; histChart.data.datasets[0].label=NAMES.v;
+  histChart.data.datasets[1].data=md; histChart.data.datasets[1].label=NAMES.m;
+  histChart.update('none');
+}
+
+/* ── Recalc ── */
+function recalc() {
+  const bv=bills.reduce((s,b)=>s+b.amount*b.myPct/100,0);
+  const bm=bills.reduce((s,b)=>s+b.amount*(1-b.myPct/100),0);
+  const ev=mine.reduce((s,e)=>s+e.amount,0);
+  const em=hers.reduce((s,e)=>s+e.amount,0);
+  const tv=bv+ev, tm=bm+em;
+  const bt=bills.reduce((s,b)=>s+b.amount,0);
+  const gt=bt; // household total = shared bills only
+  const vPct=bt>0?Math.round(bv/bt*100):50;
+
+  [$('hdr-v'),$('mob-v')].forEach(el=>{if(el)el.textContent=GBP(bv);});
+  [$('hdr-m'),$('mob-m')].forEach(el=>{if(el)el.textContent=GBP(bm);});
+  $('mob-tot').textContent=GBP(gt);
+  $('bills-total').textContent=GBP(bt);
+  $('mine-total').textContent=GBP(ev);
+  $('hers-total').textContent=GBP(em);
+
+  const activeEv = activeUser==='v' ? ev : em;
+  const activeBv = activeUser==='v' ? bv : bm;
+  const userTotal = activeBv + activeEv;
+  const grandTotal = activeBv + activeEv;
+  const hhPct  = bt > 0 ? Math.round(activeBv / bt * 100) : 0;
+  const persPct = userTotal > 0 ? Math.round(activeEv / userTotal * 100) : 0;
+
+  $('s-household').textContent = GBP(activeBv);
+  $('s-household-pct').textContent = hhPct + '% of bills';
+  $('s-personal').textContent = GBP(activeEv);
+  $('s-personal-pct').textContent = persPct + '% of total';
+
+  $('st-bv').textContent = GBP(activeBv);
+  $('st-ev').textContent = GBP(activeEv);
+  const stbm = document.getElementById('st-bm'); if(stbm) stbm.textContent = GBP(activeBv);
+  $('st-gt').textContent = GBP(bt);
+  const utEl = document.getElementById('st-user-total'); if(utEl) utEl.textContent = GBP(userTotal);
+
+  if(typeof donutChart !== 'undefined') {
+    donutChart.data.labels=[NAMES.v+"'s Bills",NAMES.v+' Personal',NAMES.m+"'s Bills",NAMES.m+' Personal'];
+    donutChart.data.datasets[0].data=[Math.round(bv),Math.round(ev),Math.round(bm),Math.round(em)];
+    donutChart.data.datasets[0].backgroundColor=['rgba(3,4,94,.85)','rgba(3,4,94,.25)','rgba(255,0,84,.85)','rgba(255,0,84,.25)'];
+    donutChart.update('none');
+  }
+  // Remaining budget
+  const incomeInp = document.getElementById('income-inp');
+  if(incomeInp) {
+    const income = parseFloat(incomeInp.value)||0;
+    const userTotal = activeUser === 'v' ? tv : tm;
+    const remaining = income - userTotal;
+    const remWrap = document.getElementById('remaining-wrap');
+    if(remWrap) {
+      remWrap.className = 'remaining-wrap ' + (remaining >= 0 ? 'positive' : 'negative');
+      document.getElementById('remaining-val').textContent = GBP(Math.abs(remaining));
+      document.getElementById('remaining-sub').textContent = remaining >= 0
+        ? '£'+income.toLocaleString()+' income − £'+Math.round(userTotal).toLocaleString()+' costs'
+        : 'Over budget by £'+Math.abs(Math.round(remaining)).toLocaleString();
+    }
+  }
+}
+
+/* ── Month ── */
+function switchMonth(ym) {
+  currentYM=ym; $('month-label').textContent=ymLabel(ym);
+  load(ym); renderAll(); updateHistory();
+  const _inc=JSON.parse(localStorage.getItem(KEY(ym)+'_inc')||'{}');
+  const _defs={v:0,m:0};
+  const _el=document.getElementById('income-inp');
+  if(_el) _el.value=_inc[activeUser]!==undefined?_inc[activeUser]:_defs[activeUser];
+  recalc();
+  applyNames();
+  togglePersonalRows();
+}
+$('prev-mo').addEventListener('click',()=>switchMonth(prevYM(currentYM)));
+$('next-mo').addEventListener('click',()=>switchMonth(nextYM(currentYM)));
+
+
+
+function switchPersonalUser(u) {
+  document.getElementById('sec-mine').style.display  = u === 'v' ? '' : 'none';
+  document.getElementById('sec-hers').style.display  = u === 'm' ? '' : 'none';
+  const bv = document.getElementById('pers-btn-v');
+  const bm = document.getElementById('pers-btn-m');
+  if(bv) bv.className = 'pers-btn' + (u==='v' ? ' active-v' : '');
+  if(bm) bm.className = 'pers-btn' + (u==='m' ? ' active-m' : '');
+}
+function togglePersonalRows() {
+  const rbv = document.getElementById('st-row-bv');
+  const rbm = document.getElementById('st-row-bm');
+  if(rbv) rbv.style.display = activeUser === 'v' ? '' : 'none';
+  if(rbm) rbm.style.display = activeUser === 'm' ? '' : 'none';
+  // Update personal section label name
+  const pn = document.getElementById('sum-personal-lbl');
+  if(pn) pn.textContent = '👤 ' + (activeUser==='v' ? NAMES.v : NAMES.m) + ' Personal';
+  const hhl = document.getElementById('sum-hh-lbl');
+  if(hhl) hhl.textContent = '🏠 ' + (activeUser==='v' ? NAMES.v : NAMES.m) + ' Household Share';
+  const utl = document.getElementById('st-lbl-user-total');
+  if(utl) utl.textContent = (activeUser==='v' ? NAMES.v : NAMES.m) + ' total';
+}
+function setUser(u) {
+  activeUser = u;
+  document.getElementById('user-v').className = 'user-btn' + (u==='v' ? ' active-v' : '');
+  document.getElementById('user-m').className = 'user-btn' + (u==='m' ? ' active-m' : '');
+  const lbl = document.getElementById('income-lbl');
+  if(lbl) lbl.textContent = '💰 Income';
+  togglePersonalRows();
+  switchPersonalUser(u);
+  // Update hero card colour classes
+  const ch = document.getElementById('card-household');
+  const cp = document.getElementById('card-personal');
+  if(ch){ ch.className = 'sum-hero-card '+(u==='v'?'v-household':'m-household'); }
+  if(cp){ cp.className = 'sum-hero-card '+(u==='v'?'v-personal':'m-personal'); }
+
+  const _inc=JSON.parse(localStorage.getItem(KEY(currentYM)+'_inc')||'{}');
+  const _defs={v:0,m:0};
+  const _el=document.getElementById('income-inp');
+  if(_el) _el.value=_inc[u]!==undefined?_inc[u]:_defs[u];
+  recalc();
+}
+
+document.getElementById('income-inp').addEventListener('input', () => { recalc(); debounceSave(); });
+
+// Name editing
+['sec-v-name','sec-m-name'].forEach(id => {
+  const el = document.getElementById(id);
+  if(!el) return;
+  const who = id.includes('-v-') ? 'v' : 'm';
+  // Live preview while typing — update labels but don't save or restore default
+  el.addEventListener('input', () => {
+    if(el.value.trim().length > 0) {
+      NAMES[who] = el.value.trim();
+      applyNames();
+    }
+  });
+  // On blur: save (restores default if empty)
+  el.addEventListener('blur',  () => saveName(who, el.value));
+  el.addEventListener('keydown', e => { if(e.key==='Enter') el.blur(); });
+});
+
+/* ── Bottom nav ── */
+const PMAP={summary:'panel-summary',bills:'panel-bills',personal:'panel-personal',mine:'panel-personal',hers:'panel-personal'};
+document.querySelectorAll('.nav-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    ['panel-bills','panel-personal','panel-summary'].forEach(id=>{const el=$(id); if(el) el.classList.remove('active');});
+    $(PMAP[btn.dataset.tab]).classList.add('active');
+    if(btn.dataset.tab==='hers') setTimeout(()=>$('sec-hers')?.scrollIntoView({behavior:'smooth',block:'start'}),50);
+  });
+});
+
+/* ── Add buttons ── */
+$('add-bill').addEventListener('click',()=>{
+  bills.push({id:nextBillId++,name:'New Bill',amount:0,myPct:50});
+  renderBills(); recalc(); save();
+  $('bill-list').lastElementChild?.scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+$('add-mine').addEventListener('click',()=>{
+  mine.push({id:nextMineId++,name:'New Expense',amount:0});
+  renderExp(mine,'mine-list','mine'); recalc(); save();
+  $('mine-list').lastElementChild?.scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+$('add-hers').addEventListener('click',()=>{
+  hers.push({id:nextHersId++,name:'New Expense',amount:0});
+  renderExp(hers,'hers-list','hers'); recalc(); save();
+  $('hers-list').lastElementChild?.scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+
+/* ── Export ── */
+$('export-btn').addEventListener('click',()=>{
+  const rows=[['Category','Item','Total £',NAMES.v+' £',NAMES.m+' £']];
+  bills.forEach(b=>rows.push(['Shared Bill',b.name,b.amount,(b.amount*b.myPct/100).toFixed(2),(b.amount*(1-b.myPct/100)).toFixed(2)]));
+  mine.forEach(e=>rows.push([NAMES.v+' Personal',e.name,e.amount,e.amount,0]));
+  hers.forEach(e=>rows.push([NAMES.m+' Personal',e.name,e.amount,0,e.amount]));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n')],{type:'text/csv'}));
+  a.download='budget-'+currentYM+'.csv'; a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* ── Boot ── */
+initCharts();
+loadNames();
+(function zeroHistoricMonths() {
+  const cutoff = '2026-05';
+  const zeroItems = arr => arr.map(x => ({...x, amount: 0}));
+  let ym = prevYM(cutoff);
+  for (let i = 0; i < 36; i++) {
+    const existing = localStorage.getItem(KEY(ym));
+    const base = existing ? (() => { try { return JSON.parse(existing); } catch { return null; } })() : null;
+    const zeroed = {
+      bills: zeroItems((base&&base.bills||DFLT_BILLS).map(b=>({...b}))),
+      mine:  zeroItems((base&&base.mine||DFLT_MINE).map(e=>({...e}))),
+      hers:  zeroItems((base&&base.hers||DFLT_HERS).map(e=>({...e}))),
+      nextBillId:100, nextMineId:10, nextHersId:10
+    };
+    localStorage.setItem(KEY(ym), JSON.stringify(zeroed));
+    ym = prevYM(ym);
+  }
+})();
+switchMonth(currentYM);
+applyNames();
+togglePersonalRows();
+switchPersonalUser(activeUser);
+</script>
+
+<!-- ── Delete confirmation modal ── -->
+<div id="del-modal" style="display:none;position:fixed;inset:0;z-index:1000;align-items:center;justify-content:center;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);">
+  <div style="background:var(--card);border-radius:20px;padding:28px 24px 20px;max-width:300px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.18);text-align:center;">
+    <div style="font-size:32px;margin-bottom:12px;">🗑️</div>
+    <div style="font-family:'Manrope',sans-serif;font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">Delete entry?</div>
+    <div style="font-size:13px;color:var(--sub);margin-bottom:22px;" id="del-modal-name"></div>
+    <div style="display:flex;gap:10px;">
+      <button id="del-cancel" style="flex:1;padding:12px;border-radius:12px;border:1.5px solid var(--b);background:var(--card2);font-family:'Manrope',sans-serif;font-size:13px;font-weight:700;color:var(--sub);cursor:pointer;">Cancel</button>
+      <button id="del-confirm" style="flex:1;padding:12px;border-radius:12px;border:none;background:var(--red);font-family:'Manrope',sans-serif;font-size:13px;font-weight:700;color:#fff;cursor:pointer;">Delete</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
